@@ -10,6 +10,9 @@ source(str_c(project.root, "/source/service/prepro.R"))
 source(str_c(project.root, "/source/feature/create.R"))
 source(str_c(project.root, "/source/feature/complement_missing.R"))
 source(str_c(project.root, "/source/model/xgboost.R"))
+source(str_c(project.root, "/source/model/logistic_regression.R"))
+source(str_c(project.root, "/source/model/rule_base.R"))
+source(str_c(project.root, "/source/model/ensemble.R"))
 
 
 tic()
@@ -21,24 +24,38 @@ raw.test <- read_csv(str_c(project.root, "/data/input/test.csv"))
 ## 一旦trainとtestをひとまとめにする
 tr_index <- 1:nrow(raw.train)
 tr_te <- raw.train %>% bind_rows(raw.test)
+test_passengerid <- raw.test$PassengerId
 
 
-# Complement Missing ------------------------------------------------------------
+# Feature Engineering, Complement Missing -----------------------------------------------------
+FE <- FeatureEngineering$new()
 CM <- ComplementMissing$new()
 
-## Complement Missing(train,test一緒に)
-tr_te <- CM$comp.Fare(tr_te)
-
-
-
-# Feature Engineering -----------------------------------------------------
-FE <- FeatureEngineering$new()
-
-## Feature Engineering(train,test一緒に)
 tr_te <- FE$familysize(tr_te) 
+tr_te <- FE$familysize_class(tr_te) 
 tr_te <- FE$cabintype(tr_te) 
+tr_te <- FE$titleofhonor(tr_te)
+tr_te <- FE$fellowpassengernum(tr_te)
+tr_te <- FE$ticketnumofchar(tr_te)
+tr_te <- FE$mother(tr_te)
+
+tr_te <- CM$comp.cabintype(tr_te)
+tr_te <- CM$comp.Fare(tr_te)
+tr_te <- CM$comp.Embarked(tr_te)
+tr_te <- CM$comp.Age(tr_te)
+
+tr_te <- FE$age_guess_flg(tr_te)
 tr_te <- FE$agegroup(tr_te)
 tr_te <- FE$fareperperson(tr_te)
+
+
+
+# 使用しない特徴量を間引く -----------------------------------------------------
+tr_te <- tr_te %>% 
+  select(-c(
+    PassengerId, Name, Cabin, Ticket, familysize, unknown_num, familysize
+  ))
+
 
 ## 再度train,test分ける
 fe.train <- tr_te[tr_index, ]
@@ -106,12 +123,26 @@ if (exec_mode == "submit") {
   Y_test <- fe.test %>% select(Survived)
   
   # Train and Predict -------------------------------------------------------
-  result <- train_and_predict_xgb(X_train, X_test, Y_train, Y_test)
+  result_xgb <- train_and_predict_xgb(X_train, X_test, Y_train, Y_test)
+  result_lr <- train_and_predict_lr(X_train, X_test, Y_train, Y_test)
+  result_rb <- train_and_predict_rb(X_train, X_test, Y_train, Y_test)
   
-  submit_file <- cbind(X_test$PassengerId, result[[2]]) %>% as.data.frame()
+  result <- list(
+    result_xgb[[2]],
+    result_lr[[1]],
+    result_rb[[1]]
+  )
+  
+  result_ensembled <- ensemble(result)
+  
+  submit_file <- cbind(test_passengerid, result_ensembled) %>% as.data.frame()
   names(submit_file) <- c("PassengerId", "Survived")
   
   output_dir <- str_c(project.root, "/data/output/submit_file_", format(Sys.time(), "%Y-%m-%d_%H-%M-%S"), ".csv")
   write.csv(submit_file, output_dir, row.names = F, quote = F)
 
 }
+
+
+
+

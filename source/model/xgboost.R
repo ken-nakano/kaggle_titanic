@@ -23,7 +23,7 @@ train_and_predict_xgb <- function(X_train, X_valid, Y_train, Y_valid) {
   bst <- xgboost(
     data = X_train,
     label = Y_train,
-    max.depth = 2,
+    max.depth = 6,
     eta = 1,
     nthread = 2,
     nrounds = 2,
@@ -35,9 +35,9 @@ train_and_predict_xgb <- function(X_train, X_valid, Y_train, Y_valid) {
   
   ## 予測                        
   pred <- predict(bst, X_valid)
-  pred <- as.numeric(pred > 0.5)
+  pred_binary <- as.numeric(pred > 0.5)
   
   ## 正解率
-  ac.rate <- accuracy.rate(table(Y_valid, pred))
-  return(list(imp, pred, ac.rate))
+  ac.rate <- accuracy.rate(table(Y_valid, pred_binary))
+  return(list(imp, pred_binary, ac.rate, pred))
 }
